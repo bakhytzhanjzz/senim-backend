@@ -8,6 +8,7 @@ import com.senim.backend.domain.User;
 import com.senim.backend.dto.CreateDealRequest;
 import com.senim.backend.dto.DealResponse;
 import com.senim.backend.dto.DealSummaryResponse;
+import com.senim.backend.dto.UpdateDealRequest;
 import com.senim.backend.exception.BusinessRuleException;
 import com.senim.backend.exception.ResourceNotFoundException;
 import com.senim.backend.repository.ChecklistItemRepository;
@@ -159,6 +160,61 @@ public class DealService {
         deal.setStatusChangedAt(Instant.now());
         deal = dealRepository.save(deal);
 
+        riskEngineService.evaluateAndUpdateDeal(dealId);
+        evictDashboardCache(deal.getAgencyId());
+
+        return DealResponse.from(dealRepository.findById(dealId).orElseThrow());
+    }
+
+    /**
+     * Partially updates editable deal fields. Only non-null fields on the request
+     * are applied. Access is restricted to users in the same agency. After saving,
+     * the risk engine re-evaluates the deal because deadlines or notes may have
+     * moved the risk level.
+     */
+    @Transactional
+    public DealResponse updateDeal(UUID dealId, UpdateDealRequest request, User requestingUser) {
+        Deal deal = loadDeal(dealId);
+        assertSameAgency(deal, requestingUser);
+
+        if (deal.getStatus() == DealStatus.APPROVED || deal.getStatus() == DealStatus.CANCELLED) {
+            throw new BusinessRuleException(
+                    "Cannot edit a deal in status " + deal.getStatus());
+        }
+
+        if (request.clientName() != null && !request.clientName().isBlank()) {
+            deal.setClientName(request.clientName().trim());
+        }
+        if (request.clientPhone() != null) {
+            deal.setClientPhone(request.clientPhone().isBlank() ? null : request.clientPhone().trim());
+        }
+        if (request.propertyAddress() != null) {
+            deal.setPropertyAddress(request.propertyAddress().isBlank() ? null : request.propertyAddress().trim());
+        }
+        if (request.propertyValueUsd() != null) {
+            deal.setPropertyValueUsd(request.propertyValueUsd());
+        }
+        if (request.commissionUsd() != null) {
+            deal.setCommissionUsd(request.commissionUsd());
+        }
+        if (request.bankName() != null) {
+            deal.setBankName(request.bankName().isBlank() ? null : request.bankName().trim());
+        }
+        if (request.mortgageProgramName() != null) {
+            deal.setMortgageProgramName(request.mortgageProgramName().isBlank()
+                    ? null : request.mortgageProgramName().trim());
+        }
+        if (request.bookingExpiryDate() != null) {
+            deal.setBookingExpiryDate(request.bookingExpiryDate());
+        }
+        if (request.bankResponseDeadline() != null) {
+            deal.setBankResponseDeadline(request.bankResponseDeadline());
+        }
+        if (request.notes() != null) {
+            deal.setNotes(request.notes().isBlank() ? null : request.notes());
+        }
+
+        deal = dealRepository.save(deal);
         riskEngineService.evaluateAndUpdateDeal(dealId);
         evictDashboardCache(deal.getAgencyId());
 

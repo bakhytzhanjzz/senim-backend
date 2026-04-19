@@ -4,6 +4,7 @@ import com.senim.backend.domain.User;
 import com.senim.backend.dto.CreateDealRequest;
 import com.senim.backend.dto.DealResponse;
 import com.senim.backend.dto.DealSummaryResponse;
+import com.senim.backend.dto.UpdateDealRequest;
 import com.senim.backend.dto.UpdateDealStatusRequest;
 import com.senim.backend.service.DealService;
 import jakarta.validation.Valid;
@@ -54,6 +55,18 @@ public class DealController {
             @PathVariable UUID id,
             @AuthenticationPrincipal User currentUser) {
         return ResponseEntity.ok(dealService.getDealById(id, currentUser));
+    }
+
+    /**
+     * Partially updates editable deal fields (client info, deadlines, bank, notes).
+     * Returns the updated deal with the recalculated risk level.
+     */
+    @PatchMapping("/{id}")
+    public ResponseEntity<DealResponse> updateDeal(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateDealRequest request,
+            @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(dealService.updateDeal(id, request, currentUser));
     }
 
     /**
