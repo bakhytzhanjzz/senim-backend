@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: senim-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: senim
+      POSTGRES_USER: senim
+      POSTGRES_PASSWORD: senim_secret
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U senim -d senim"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: senim-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: senim-app
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/senim
+      SPRING_DATASOURCE_USERNAME: senim
+      SPRING_DATASOURCE_PASSWORD: senim_secret
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      APP_JWT_SECRET: 4a8e6f2b1c9d3e7a5b0f4d8c2e6a9b3d7f1e5c0a4b8d2f6e9a3c7b1d5f0e4c8
+      APP_JWT_EXPIRATION: 604800000
+
+volumes:
+  postgres_data:
+  redis_data:
