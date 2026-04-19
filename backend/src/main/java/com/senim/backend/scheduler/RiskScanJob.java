@@ -5,6 +5,8 @@ import com.senim.backend.domain.DealStatus;
 import com.senim.backend.domain.RiskLevel;
 import com.senim.backend.dto.RiskScanResultResponse;
 import com.senim.backend.repository.DealRepository;
+import com.senim.backend.risk.RiskUpdateResult;
+import com.senim.backend.service.NotificationService;
 import com.senim.backend.service.RiskEngineService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -20,16 +22,21 @@ public class RiskScanJob {
 
     private final DealRepository dealRepository;
     private final RiskEngineService riskEngineService;
+    private final NotificationService notificationService;
 
-    public RiskScanJob(DealRepository dealRepository, RiskEngineService riskEngineService) {
+    public RiskScanJob(
+            DealRepository dealRepository,
+            RiskEngineService riskEngineService,
+            NotificationService notificationService) {
         this.dealRepository = dealRepository;
         this.riskEngineService = riskEngineService;
+        this.notificationService = notificationService;
     }
 
     /**
-     * Scans all active deals every 6 hours and recalculates their risk levels.
-     * Uses fixedRate so the interval is measured from job completion, avoiding
-     * pile-ups if the scan takes longer than expected.
+     * Scans all IN_PROGRESS and SUBMITTED deals every 6 hours.
+     * Re-evaluates each deal's risk level, then creates DEAL_CRITICAL notifications
+     * whenever a deal's risk escalates to CRITICAL for the first time in this cycle.
      */
     @Scheduled(fixedRateString = "PT6H")
     public RiskScanResultResponse scan() {
@@ -42,10 +49,16 @@ public class RiskScanJob {
 
         for (Deal deal : activeDeals) {
             try {
-                boolean updated = riskEngineService.evaluateAndUpdateDeal(deal.getId());
-                if (updated) {
+                RiskUpdateResult result = riskEngineService.evaluateAndUpdateDeal(deal.getId());
+
+                if (result.changed()) {
                     updatedCount.incrementAndGet();
                 }
+
+                if (result.escalatedToCritical()) {
+                    notifyDealCritical(deal);
+                }
+
             } catch (Exception e) {
                 log.error("Risk evaluation failed for deal {}: {}", deal.getId(), e.getMessage());
             }
@@ -67,5 +80,14 @@ public class RiskScanJob {
                 result.totalScanned(), result.updated(), result.criticalCount());
 
         return result;
+    }
+
+    private void notifyDealCritical(Deal deal) {
+        try {
+            notificationService.notifyDealCritical(deal);
+            log.info("CRITICAL notifications sent for deal {} ({})", deal.getId(), deal.getClientName());
+        } catch (Exception e) {
+            log.error("Failed to send CRITICAL notifications for deal {}: {}", deal.getId(), e.getMessage());
+        }
     }
 }

@@ -13,6 +13,8 @@ import com.senim.backend.exception.ResourceNotFoundException;
 import com.senim.backend.repository.ChecklistItemRepository;
 import com.senim.backend.repository.DealRepository;
 import com.senim.backend.repository.DocumentRepository;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,18 +53,21 @@ public class DealService {
     private final ChecklistItemRepository checklistItemRepository;
     private final DocumentRepository documentRepository;
     private final RiskEngineService riskEngineService;
+    private final CacheManager cacheManager;
 
     public DealService(
             DealRepository dealRepository,
             ChecklistService checklistService,
             ChecklistItemRepository checklistItemRepository,
             DocumentRepository documentRepository,
-            RiskEngineService riskEngineService) {
+            RiskEngineService riskEngineService,
+            CacheManager cacheManager) {
         this.dealRepository = dealRepository;
         this.checklistService = checklistService;
         this.checklistItemRepository = checklistItemRepository;
         this.documentRepository = documentRepository;
         this.riskEngineService = riskEngineService;
+        this.cacheManager = cacheManager;
     }
 
     /**
@@ -101,6 +106,7 @@ public class DealService {
             deal.setRiskLevel(initialRisk);
         }
 
+        evictDashboardCache(deal.getAgencyId());
         return DealResponse.from(deal);
     }
 
@@ -154,6 +160,7 @@ public class DealService {
         deal = dealRepository.save(deal);
 
         riskEngineService.evaluateAndUpdateDeal(dealId);
+        evictDashboardCache(deal.getAgencyId());
 
         return DealResponse.from(dealRepository.findById(dealId).orElseThrow());
     }
@@ -180,9 +187,10 @@ public class DealService {
 
     /**
      * Aggregated dashboard data for an agency owner: deal counts by status and
-     * risk level, plus commission at risk.
+     * risk level, plus commission at risk. Cached for 5 minutes per agencyId.
      */
     @Transactional(readOnly = true)
+    @org.springframework.cache.annotation.Cacheable(value = "dashboard", key = "#agencyId.toString()")
     public DealSummaryResponse getDealSummaryForDashboard(UUID agencyId) {
         List<Deal> allDeals = dealRepository.findAllByAgencyId(agencyId);
 
@@ -219,6 +227,13 @@ public class DealService {
     private void assertSameAgency(Deal deal, User user) {
         if (!deal.getAgencyId().equals(user.getAgencyId())) {
             throw new AccessDeniedException("You do not have access to this deal");
+        }
+    }
+
+    private void evictDashboardCache(UUID agencyId) {
+        Cache cache = cacheManager.getCache("dashboard");
+        if (cache != null) {
+            cache.evict(agencyId.toString());
         }
     }
 }

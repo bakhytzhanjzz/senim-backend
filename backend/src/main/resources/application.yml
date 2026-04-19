@@ -22,6 +22,12 @@ spring:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}
 
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 20MB
+      max-request-size: 21MB
+
 server:
   port: 8080
 
@@ -29,3 +35,5 @@ app:
   jwt:
     secret: ${APP_JWT_SECRET:4a8e6f2b1c9d3e7a5b0f4d8c2e6a9b3d7f1e5c0a4b8d2f6e9a3c7b1d5f0e4c8}
     expiration: ${APP_JWT_EXPIRATION:604800000}
+  storage:
+    upload-dir: ${APP_STORAGE_UPLOAD_DIR:./uploads}

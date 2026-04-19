@@ -3,6 +3,8 @@ package com.senim.backend.dto;
 import com.senim.backend.domain.DealStatus;
 import com.senim.backend.domain.RiskLevel;
 
+import java.io.Serial;
+import java.io.Serializable;
 import java.math.BigDecimal;
 import java.util.Map;
 
@@ -14,4 +16,8 @@ public record DealSummaryResponse(
         BigDecimal totalCommissionAtRisk,
         long criticalDeals,
         long highRiskDeals
-) {}
+) implements Serializable {
+
+    @Serial
+    private static final long serialVersionUID = 1L;
+}

@@ -9,6 +9,7 @@ import com.senim.backend.repository.DealRepository;
 import com.senim.backend.repository.DocumentRepository;
 import com.senim.backend.risk.RiskEvaluationContext;
 import com.senim.backend.risk.RiskRule;
+import com.senim.backend.risk.RiskUpdateResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -67,24 +68,25 @@ public class RiskEngineService {
     /**
      * Loads the deal with its current checklist and documents, runs the engine,
      * and persists the new riskLevel only if it changed (without touching updatedAt).
-     *
-     * @return true if the risk level was changed and persisted
+     * Returns a result capturing the before/after levels and whether a change occurred.
      */
     @Transactional
-    public boolean evaluateAndUpdateDeal(UUID dealId) {
+    public RiskUpdateResult evaluateAndUpdateDeal(UUID dealId) {
         Deal deal = dealRepository.findById(dealId)
                 .orElseThrow(() -> new ResourceNotFoundException("Deal not found: " + dealId));
 
         List<ChecklistItem> items = checklistItemRepository.findAllByDealIdOrderBySortOrder(dealId);
         long docCount = documentRepository.countByDealId(dealId);
 
+        RiskLevel previousLevel = deal.getRiskLevel();
         RiskLevel newLevel = calculateRiskLevel(deal, items, docCount);
 
-        if (newLevel != deal.getRiskLevel()) {
+        if (newLevel != previousLevel) {
             dealRepository.updateRiskLevelById(dealId, newLevel);
-            log.info("Risk level updated for deal {}: {} → {}", dealId, deal.getRiskLevel(), newLevel);
-            return true;
+            log.info("Risk level updated for deal {}: {} → {}", dealId, previousLevel, newLevel);
+            return new RiskUpdateResult(previousLevel, newLevel, true);
         }
-        return false;
+
+        return new RiskUpdateResult(previousLevel, newLevel, false);
     }
 }
