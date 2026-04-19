@@ -186,13 +186,28 @@ public class DealService {
     }
 
     /**
-     * Aggregated dashboard data for an agency owner: deal counts by status and
-     * risk level, plus commission at risk. Cached for 5 minutes per agencyId.
+     * Aggregated dashboard data scoped by role:
+     * - OWNER: agency-wide metrics, cached per agencyId for 5 minutes.
+     * - AGENT: their own deals only, not cached (small dataset, no shared key).
      */
     @Transactional(readOnly = true)
-    @org.springframework.cache.annotation.Cacheable(value = "dashboard", key = "#agencyId.toString()")
-    public DealSummaryResponse getDealSummaryForDashboard(UUID agencyId) {
-        List<Deal> allDeals = dealRepository.findAllByAgencyId(agencyId);
+    public DealSummaryResponse getDealSummaryForDashboard(User user) {
+        boolean isOwner = user.getRole() == Role.OWNER;
+        String cacheKey = isOwner ? "agency::" + user.getAgencyId() : null;
+
+        if (cacheKey != null) {
+            Cache cache = cacheManager.getCache("dashboard");
+            if (cache != null) {
+                DealSummaryResponse cached = cache.get(cacheKey, DealSummaryResponse.class);
+                if (cached != null) {
+                    return cached;
+                }
+            }
+        }
+
+        List<Deal> allDeals = isOwner
+                ? dealRepository.findAllByAgencyId(user.getAgencyId())
+                : dealRepository.findAllByAgentId(user.getId());
 
         Map<DealStatus, Long> byStatus = allDeals.stream()
                 .collect(Collectors.groupingBy(Deal::getStatus, () -> new EnumMap<>(DealStatus.class),
@@ -206,9 +221,13 @@ public class DealService {
                 .filter(d -> ACTIVE_STATUSES.contains(d.getStatus()))
                 .count();
 
-        BigDecimal commissionAtRisk = getTotalCommissionAtRisk(agencyId);
+        BigDecimal commissionAtRisk = allDeals.stream()
+                .filter(d -> ACTIVE_STATUSES.contains(d.getStatus()) && AT_RISK_LEVELS.contains(d.getRiskLevel()))
+                .map(Deal::getCommissionUsd)
+                .filter(c -> c != null)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        return new DealSummaryResponse(
+        DealSummaryResponse result = new DealSummaryResponse(
                 allDeals.size(),
                 activeDeals,
                 byStatus,
@@ -217,6 +236,15 @@ public class DealService {
                 byRiskLevel.getOrDefault(RiskLevel.CRITICAL, 0L),
                 byRiskLevel.getOrDefault(RiskLevel.HIGH, 0L)
         );
+
+        if (cacheKey != null) {
+            Cache cache = cacheManager.getCache("dashboard");
+            if (cache != null) {
+                cache.put(cacheKey, result);
+            }
+        }
+
+        return result;
     }
 
     private Deal loadDeal(UUID dealId) {
@@ -233,7 +261,7 @@ public class DealService {
     private void evictDashboardCache(UUID agencyId) {
         Cache cache = cacheManager.getCache("dashboard");
         if (cache != null) {
-            cache.evict(agencyId.toString());
+            cache.evict("agency::" + agencyId);
         }
     }
 }

@@ -9,7 +9,6 @@ import com.senim.backend.service.DealService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -71,14 +70,13 @@ public class DealController {
     }
 
     /**
-     * Risk dashboard summary — restricted to OWNER role.
-     * Returns deal counts by status/risk level and commission at risk.
+     * Dashboard summary for the authenticated user.
+     * OWNER: agency-wide metrics. AGENT: their own deals only.
      */
     @GetMapping("/dashboard")
-    @PreAuthorize("hasRole('OWNER')")
     public ResponseEntity<DealSummaryResponse> getDashboard(
             @AuthenticationPrincipal User currentUser) {
         return ResponseEntity.ok(
-                dealService.getDealSummaryForDashboard(currentUser.getAgencyId()));
+                dealService.getDealSummaryForDashboard(currentUser));
     }
 }
